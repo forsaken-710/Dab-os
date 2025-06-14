@@ -1,0 +1,1190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bare Metal OS Simulation</title>
+    <!-- Tailwind CSS CDN for easy styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Apply Inter font */
+        body {
+            font-family: 'Inter', sans-serif;
+            overflow: hidden; /* Prevent scrolling */
+        }
+        /* Custom styles for desktop and window elements */
+        .desktop-background {
+            background-image: url('https://placehold.co/1920x1080/0A192F/E0E7FF?text=Your+Custom+OS');
+            background-size: cover;
+            background-position: center;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            font-size: 3rem;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+        .taskbar {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 48px;
+            background-color: rgba(30, 41, 59, 0.9); /* Dark slate blue with transparency */
+            backdrop-filter: blur(8px); /* Frosted glass effect */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 0 1rem;
+            box-shadow: 0 -4px 10px rgba(0,0,0,0.2);
+            z-index: 100;
+        }
+        .taskbar-button {
+            @apply flex items-center justify-center p-2 rounded-md transition-all duration-200 cursor-pointer;
+        }
+        .taskbar-button:hover {
+            @apply bg-blue-600;
+        }
+        .start-menu {
+            position: absolute;
+            bottom: 48px; /* Above the taskbar */
+            left: 0;
+            width: 250px;
+            background-color: rgba(255, 255, 255, 0.95);
+            border-top-right-radius: 10px;
+            border-top-left-radius: 10px;
+            box-shadow: 0 -5px 15px rgba(0,0,0,0.2);
+            padding: 0.5rem;
+            display: none; /* Hidden by default */
+            flex-direction: column;
+            z-index: 101; /* Above taskbar */
+        }
+        .start-menu-item {
+            @apply flex items-center p-2 rounded-md transition-all duration-200 cursor-pointer text-gray-800;
+        }
+        .start-menu-item:hover {
+            @apply bg-blue-500 text-white;
+        }
+        .window {
+            position: absolute;
+            min-width: 300px;
+            min-height: 200px;
+            background-color: rgba(255, 255, 255, 0.95);
+            border-radius: 10px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+            resize: both; /* Allow resizing */
+            overflow: hidden; /* Hide scrollbars if content overflows initially */
+            display: flex;
+            flex-direction: column;
+            border: 1px solid rgba(0,0,0,0.1);
+            z-index: 10; /* Base z-index for windows */
+        }
+        .window-header {
+            cursor: grab;
+            @apply flex justify-between items-center bg-gray-700 text-white p-2 rounded-t-lg;
+            border-bottom: 1px solid rgba(0,0,0,0.1);
+        }
+        .window-title {
+            @apply font-semibold text-sm;
+        }
+        .window-controls {
+            @apply flex space-x-1;
+        }
+        .window-control-btn {
+            @apply w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold text-gray-800;
+        }
+        .window-control-btn.close { @apply bg-red-500 hover:bg-red-600; }
+        .window-control-btn.minimize { @apply bg-yellow-500 hover:bg-yellow-600; }
+        .window-control-btn.maximize { @apply bg-green-500 hover:bg-green-600; }
+        .window-content {
+            @apply flex-grow p-4 text-gray-800 overflow-auto; /* Allow content to scroll */
+        }
+
+        /* Terminal specific styles */
+        .terminal-content {
+            @apply bg-black text-green-300 font-mono text-sm flex-grow p-2 overflow-y-auto whitespace-pre-wrap;
+            height: 100%; /* Ensure content fills available space */
+        }
+        .terminal-input-container {
+            @apply flex border-t border-gray-700;
+        }
+        .terminal-prompt {
+            @apply text-green-400 p-2;
+        }
+        .terminal-input {
+            @apply flex-grow bg-black text-green-300 p-2 border-none outline-none;
+        }
+
+        /* File Explorer specific styles */
+        .file-explorer-toolbar {
+            @apply flex items-center p-2 border-b border-gray-200 bg-gray-100;
+        }
+        .file-explorer-path {
+            @apply flex-grow p-1 px-2 bg-white border border-gray-300 rounded-md text-sm text-gray-700;
+        }
+        .file-explorer-content {
+            @apply flex-grow p-4 overflow-y-auto grid grid-cols-5 gap-4; /* Responsive grid for icons */
+        }
+        .file-item {
+            @apply flex flex-col items-center justify-center p-2 rounded-md transition-colors duration-100 cursor-pointer text-gray-800 text-center;
+            min-height: 80px; /* Ensure space for icon and text */
+        }
+        .file-item:hover {
+            @apply bg-blue-100;
+        }
+        /* Adjusted icon size - now directly apply to SVG below */
+        .file-item-icon {
+            @apply mb-1; /* Removed w-6 h-6 from here to apply directly to SVG */
+        }
+        .file-item-name {
+            @apply text-xs break-all;
+        }
+        .editor-save-btn {
+            @apply bg-blue-500 hover:bg-blue-600 text-white font-bold py-1 px-3 rounded-md text-sm transition-colors duration-200;
+        }
+        .editor-status-msg {
+            @apply text-sm text-green-700 ml-2;
+        }
+    </style>
+</head>
+<body class="bg-gray-900">
+
+    <!-- Desktop Background -->
+    <div class="desktop-background">
+        <h1 class="text-white text-5xl font-bold">My Custom OS</h1>
+    </div>
+
+    <!-- Taskbar -->
+    <div class="taskbar">
+        <button id="startMenuBtn" class="taskbar-button text-gray-300 hover:text-white mr-4">
+            <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M4 21v-2h2v2H4zm0-4v-2h2v2H4zm0-4v-2h2v2H4zm0-4V7h2v2H4zM20 21v-2h2v2h-2zm0-4v-2h2v2h-2zm0-4v-2h2v2h-2zm0-4V7h2v2h-2zM8 21v-2h8v2H8zm0-4v-2h8v2H8zm0-4v-2h8v2H8zm0-4V7h8v2H8zM4 3v2h2V3H4zm16 0v2h2V3h-2zM8 3v2h8V3H8z"/>
+            </svg>
+            <span class="ml-2 hidden sm:inline">Start</span>
+        </button>
+        <div class="flex-grow"></div>
+        <div class="text-gray-300 text-sm">
+            <span id="timeDisplay"></span>
+        </div>
+    </div>
+
+    <!-- Start Menu -->
+    <div id="startMenu" class="start-menu">
+        <button class="start-menu-item" id="startMenuNewWindow">
+            <svg class="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 14H4V8h16v10zm-2-7H6v2h12v-2z"/>
+            </svg>
+            New Window
+        </button>
+        <button class="start-menu-item" id="startMenuTerminal">
+            <svg class="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M20 18c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z"/>
+            </svg>
+            Terminal
+        </button>
+        <button class="start-menu-item" id="startMenuFileExplorer">
+            <svg class="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
+            </svg>
+            File Explorer
+        </button>
+        <button class="start-menu-item" id="startMenuRestart">
+            <svg class="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M13 3h-2v10h2V3zm4.83 2.17l-1.42 1.42C17.49 7.82 19 9.83 19 12c0 3.87-3.13 7-7 7s-7-3.13-7-7c0-2.17 1.51-4.18 3.6-5.42L6.17 5.17C3.52 6.84 2 9.28 2 12c0 5.52 4.48 10 10 10s10-4.48 10-10c0-2.72-1.52-5.16-4.17-6.83z"/>
+            </svg>
+            Restart
+        </button>
+        <button class="start-menu-item" id="startMenuShutdown">
+            <svg class="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-10V6h2v4h-2zm0 5h2v-2h-2v2z"/>
+            </svg>
+            Shutdown
+        </button>
+    </div>
+
+    <!-- General Window Template -->
+    <template id="windowTemplate">
+        <div class="window" style="top: 10%; left: 20%; width: 500px; height: 350px;">
+            <div class="window-header">
+                <div class="window-title">New Window</div>
+                <div class="window-controls">
+                    <button class="window-control-btn minimize"></button>
+                    <button class="window-control-btn maximize"></button>
+                    <button class="window-control-btn close"></button>
+                </div>
+            </div>
+            <div class="window-content">
+                <!-- Default content, can be replaced by createTextEditorWindow -->
+                <p class="mb-4">This is a new window! Each window can be dragged, resized, and will come to the front when clicked.</p>
+                <textarea class="w-full h-32 p-2 mt-4 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Type something here..."></textarea>
+            </div>
+        </div>
+    </template>
+
+    <!-- Terminal Window Template -->
+    <template id="terminalWindowTemplate">
+        <div class="window" style="top: 15%; left: 25%; width: 600px; height: 400px;">
+            <div class="window-header">
+                <div class="window-title">Terminal</div>
+                <div class="window-controls">
+                    <button class="window-control-btn minimize"></button>
+                    <button class="window-control-btn maximize"></button>
+                    <button class="window-control-btn close"></button>
+                </div>
+            </div>
+            <div class="window-content p-0 flex flex-col">
+                <div class="terminal-content" style="flex-grow: 1;"></div>
+                <div class="terminal-input-container">
+                    <span class="terminal-prompt">user@os:<span class="current-path">/</span>$</span>
+                    <input type="text" class="terminal-input" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off">
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <!-- File Explorer Window Template -->
+    <template id="fileExplorerWindowTemplate">
+        <div class="window" style="top: 12%; left: 15%; width: 700px; height: 500px;">
+            <div class="window-header">
+                <div class="window-title">File Explorer</div>
+                <div class="window-controls">
+                    <button class="window-control-btn minimize"></button>
+                    <button class="window-control-btn maximize"></button>
+                    <button class="window-control-btn close"></button>
+                </div>
+            </div>
+            <div class="window-content p-0 flex flex-col">
+                <div class="file-explorer-toolbar">
+                    <button class="mr-2 p-1 rounded-md hover:bg-gray-200" id="fileExplorerBackBtn">
+                        <svg class="w-5 h-5 text-gray-600" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M15.41 16.59L10.83 12l4.58-4.59L14 6l-6 6 6 6z"/>
+                        </svg>
+                    </button>
+                    <button class="mr-2 p-1 rounded-md hover:bg-gray-200" id="fileExplorerRefreshBtn">
+                        <svg class="w-5 h-5 text-gray-600" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+                        </svg>
+                    </button>
+                    <div class="file-explorer-path" contenteditable="false">/</div>
+                </div>
+                <div class="file-explorer-content">
+                    <!-- File and folder icons will be rendered here -->
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <script>
+        // --- Global File System Variables and Utilities ---
+        const FS_KEY = 'os_filesystem_data';
+        let filesystem = {}; // Represents the current state of the filesystem
+
+        function saveFileSystem() {
+            localStorage.setItem(FS_KEY, JSON.stringify(filesystem));
+        }
+
+        function loadFileSystem() {
+            const storedFs = localStorage.getItem(FS_KEY);
+            if (storedFs) {
+                try {
+                    filesystem = JSON.parse(storedFs);
+                    // Sanity check: Ensure root exists and is a directory
+                    if (!filesystem['/'] || filesystem['/'].type !== 'directory' || !filesystem['/'].contents) {
+                        console.warn("Filesystem root corrupted or missing. Re-initializing.");
+                        filesystem = { '/': { type: 'directory', contents: {} } };
+                        saveFileSystem();
+                    }
+                } catch (e) {
+                    console.error("Failed to parse stored filesystem, re-initializing:", e);
+                    filesystem = { '/': { type: 'directory', contents: {} } };
+                    saveFileSystem();
+                }
+            } else {
+                // Initialize with a root directory
+                filesystem = { '/': { type: 'directory', contents: {} } };
+                saveFileSystem();
+            }
+            // console.log("Filesystem loaded:", filesystem); // Debugging
+        }
+
+        function getPathNode(path) {
+            if (path === '/') return filesystem['/'];
+            const parts = path.split('/').filter(p => p);
+            let currentNode = filesystem['/'];
+            for (const part of parts) {
+                if (!currentNode || currentNode.type !== 'directory' || !currentNode.contents || !currentNode.contents[part]) {
+                    return null; // Path not found or not a directory
+                }
+                currentNode = currentNode.contents[part];
+            }
+            return currentNode;
+        }
+
+        function resolvePath(basePath, targetPath) {
+            let absolutePath;
+            if (targetPath.startsWith('/')) {
+                absolutePath = targetPath;
+            } else {
+                absolutePath = `${basePath === '/' ? '' : basePath}/${targetPath}`;
+            }
+            const parts = absolutePath.split('/').filter(p => p);
+            const resolvedParts = [];
+            for (const part of parts) {
+                if (part === '..') {
+                    if (resolvedParts.length > 0) {
+                        resolvedParts.pop();
+                    }
+                } else if (part !== '.') {
+                    resolvedParts.push(part);
+                }
+            }
+            return `/${resolvedParts.join('/')}`;
+        }
+
+        function escapeHtml(text) {
+            const map = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            };
+            return text.replace(/[&<>"']/g, function(m) { return map[m]; });
+        }
+
+        // Centralized program runner (accessible by both terminal and file explorer)
+        function runProgramLogic(filePath, outputCallback) {
+            const node = getPathNode(filePath);
+
+            if (!node) {
+                outputCallback(`run: ${filePath}: No such file or directory`);
+                return;
+            }
+            if (node.type === 'directory') {
+                outputCallback(`run: ${filePath}: Is a directory`);
+                return;
+            }
+            if (!node.executable) {
+                outputCallback(`run: ${filePath}: Permission denied (not marked as executable).`);
+                return;
+            }
+
+            try {
+                // Programs execute with 'print' function available
+                const programFunction = new Function('print', node.content);
+                programFunction(outputCallback);
+                outputCallback(`Program '${filePath.split('/').pop()}' finished.`);
+            } catch (error) {
+                outputCallback(`Error running program '${filePath.split('/').pop()}':`);
+                outputCallback(`  ${error.message}`);
+            }
+        }
+
+
+        document.addEventListener('DOMContentLoaded', () => {
+            // Call loadFileSystem once when the DOM is ready
+            loadFileSystem();
+
+            // Clock for taskbar
+            const timeDisplay = document.getElementById('timeDisplay');
+            function updateTime() {
+                const now = new Date();
+                timeDisplay.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            }
+            setInterval(updateTime, 1000);
+            updateTime(); // Initial call
+
+            // Z-index management: keep track of the highest z-index
+            let highestZIndex = 10; // Start with the base z-index
+
+            function bringToFront(windowElement) {
+                highestZIndex++;
+                windowElement.style.zIndex = highestZIndex;
+            }
+
+            // Window Dragging Functionality (re-usable for new windows)
+            function makeWindowDraggable(windowElement) {
+                const windowHeader = windowElement.querySelector('.window-header');
+                let isDragging = false;
+                let currentX = 0, currentY = 0, initialX, initialY, xOffset = 0, yOffset = 0;
+
+                // Ensure control buttons don't trigger drag
+                const controlButtons = windowHeader.querySelectorAll('.window-control-btn');
+                controlButtons.forEach(btn => {
+                    btn.addEventListener('mousedown', (e) => e.stopPropagation());
+                    btn.addEventListener('touchstart', (e) => e.stopPropagation());
+                });
+
+                windowHeader.addEventListener('mousedown', dragStart);
+                document.addEventListener('mouseup', dragEnd);
+                document.addEventListener('mousemove', drag);
+
+                // Touch events for dragging on mobile
+                windowHeader.addEventListener('touchstart', dragStart);
+                document.addEventListener('touchend', dragEnd);
+                document.addEventListener('touchmove', drag);
+
+                // Click event to bring window to front (only on the window itself, not children like input fields)
+                windowElement.addEventListener('mousedown', (e) => {
+                    if (!e.target.closest('.window-content')) {
+                         bringToFront(windowElement);
+                    }
+                });
+                windowElement.addEventListener('touchstart', (e) => {
+                    if (!e.target.closest('.window-content')) {
+                        bringToFront(windowElement);
+                    }
+                });
+
+                function dragStart(e) {
+                    if (e.target.matches('.window-content *')) {
+                        return;
+                    }
+                    e.preventDefault();
+                    isDragging = true;
+                    const clientX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
+                    const clientY = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
+
+                    const transform = window.getComputedStyle(windowElement).transform;
+                    if (transform !== 'none') {
+                        const matrix = new DOMMatrixReadOnly(transform);
+                        xOffset = matrix.m41;
+                        yOffset = matrix.m42;
+                    } else {
+                        xOffset = 0;
+                        yOffset = 0;
+                    }
+
+                    initialX = clientX - xOffset;
+                    initialY = clientY - yOffset;
+
+                    bringToFront(windowElement);
+                }
+
+                function drag(e) {
+                    if (!isDragging) return;
+                    e.preventDefault();
+
+                    const clientX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
+                    const clientY = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
+
+                    currentX = clientX - initialX;
+                    currentY = clientY - initialY;
+
+                    setTranslate(currentX, currentY, windowElement);
+                }
+
+                function dragEnd(e) {
+                    initialX = currentX;
+                    initialY = currentY;
+                    isDragging = false;
+                }
+
+                function setTranslate(xPos, yPos, el) {
+                    el.style.transform = `translate3d(${xPos}px, ${yPos}px, 0)`;
+                }
+            }
+
+            // Window minimize/maximize/close functionality (re-usable for new windows)
+            function setupWindowControls(windowElement) {
+                let isMaximized = false;
+                let originalPosition = {};
+                let originalSize = {};
+                let originalTransform = '';
+
+                const minimizeBtn = windowElement.querySelector('.minimize');
+                const maximizeBtn = windowElement.querySelector('.maximize');
+                const closeBtn = windowElement.querySelector('.close');
+
+                minimizeBtn.onclick = () => {
+                    if (!windowElement.dataset.minimized) {
+                        originalTransform = window.getComputedStyle(windowElement).transform;
+                        windowElement.dataset.originalTransform = originalTransform;
+                        windowElement.dataset.originalStyle = windowElement.style.cssText;
+
+                        const rect = windowElement.getBoundingClientRect();
+                        windowElement.style.transform = `translate3d(${rect.left}px, ${window.innerHeight - rect.height - 50}px, 0) scale(0.1)`;
+                        windowElement.style.opacity = '0.5';
+                        windowElement.style.pointerEvents = 'none';
+                        windowElement.dataset.minimized = 'true';
+                    } else {
+                        windowElement.style.cssText = windowElement.dataset.originalStyle;
+                        windowElement.style.transform = windowElement.dataset.originalTransform;
+                        windowElement.style.pointerEvents = 'auto';
+                        delete windowElement.dataset.minimized;
+                        delete windowElement.dataset.originalTransform;
+                        delete windowElement.dataset.originalStyle;
+                    }
+                };
+
+                maximizeBtn.onclick = () => {
+                    if (!isMaximized) {
+                        originalPosition = { top: windowElement.offsetTop, left: windowElement.offsetLeft };
+                        originalSize = { width: windowElement.offsetWidth, height: windowElement.offsetHeight };
+                        originalTransform = window.getComputedStyle(windowElement).transform;
+                        windowElement.dataset.lastTransform = originalTransform;
+
+                        windowElement.style.transition = 'all 0.3s ease-in-out';
+                        windowElement.style.top = '0px';
+                        windowElement.style.left = '0px';
+                        windowElement.style.width = '100vw';
+                        windowElement.style.height = `${window.innerHeight - 48}px`;
+                        windowElement.style.transform = 'none';
+                        windowElement.style.borderRadius = '0';
+                        windowElement.style.resize = 'none';
+                        isMaximized = true;
+                    } else {
+                        windowElement.style.top = `${originalPosition.top}px`;
+                        windowElement.style.left = `${originalPosition.left}px`;
+                        windowElement.style.width = `${originalSize.width}px`;
+                        windowElement.style.height = `${originalSize.height}px`;
+                        windowElement.style.transition = 'all 0.3s ease-in-out';
+                        windowElement.style.borderRadius = '10px';
+                        windowElement.style.resize = 'both';
+                        if (windowElement.dataset.lastTransform && windowElement.dataset.lastTransform !== 'none') {
+                            windowElement.style.transform = windowElement.dataset.lastTransform;
+                        }
+                        isMaximized = false;
+                    }
+                    setTimeout(() => {
+                        windowElement.style.transition = '';
+                    }, 300);
+                };
+
+                closeBtn.onclick = () => {
+                    windowElement.remove();
+                };
+
+                window.addEventListener('resize', () => {
+                    if (isMaximized) {
+                        windowElement.style.height = `${window.innerHeight - 48}px`;
+                    }
+                });
+            }
+
+
+            // --- Terminal Core Logic ---
+            function setupTerminal(terminalWindow) {
+                const outputDiv = terminalWindow.querySelector('.terminal-content');
+                const inputField = terminalWindow.querySelector('.terminal-input');
+                const currentPathSpan = terminalWindow.querySelector('.current-path');
+
+                let terminalCurrentPath = '/';
+                let commandHistory = [];
+                let historyIndex = -1;
+
+                updatePrompt();
+                appendToOutput("Welcome to My Custom OS Terminal!\nType 'help' for available commands.");
+
+                inputField.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        const command = inputField.value.trim();
+                        if (command) {
+                            appendToOutput(`user@os:${terminalCurrentPath}$ ${command}`);
+                            executeCommand(command);
+                            commandHistory.unshift(command);
+                            historyIndex = -1;
+                            inputField.value = '';
+                        }
+                        outputDiv.scrollTop = outputDiv.scrollHeight;
+                    } else if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        if (commandHistory.length > 0 && historyIndex < commandHistory.length - 1) {
+                            historyIndex++;
+                            inputField.value = commandHistory[historyIndex];
+                        }
+                    } else if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        if (historyIndex > 0) {
+                            historyIndex--;
+                            inputField.value = commandHistory[historyIndex];
+                        } else if (historyIndex === 0) {
+                            historyIndex = -1;
+                            inputField.value = '';
+                        }
+                    }
+                });
+
+                function appendToOutput(text) {
+                    outputDiv.innerHTML += `<span>${escapeHtml(text)}</span>\n`;
+                }
+
+                function updatePrompt() {
+                    currentPathSpan.textContent = terminalCurrentPath;
+                }
+
+
+                function executeCommand(command) {
+                    const parts = command.split(/\s+/).filter(p => p);
+                    const cmd = parts[0];
+                    const args = parts.slice(1);
+
+                    const commandContext = {
+                        appendToOutput: appendToOutput,
+                        terminalCurrentPath: terminalCurrentPath,
+                        updatePrompt: updatePrompt,
+                        setTerminalCurrentPath: (path) => { terminalCurrentPath = path; updatePrompt(); },
+                        getPathNode: getPathNode,
+                        resolvePath: (target) => resolvePath(terminalCurrentPath, target),
+                        saveFileSystem: saveFileSystem,
+                        executeProgram: runProgramLogic
+                    };
+
+                    switch (cmd) {
+                        case 'ls':
+                            cmd_ls(args, commandContext);
+                            break;
+                        case 'cd':
+                            cmd_cd(args, commandContext);
+                            break;
+                        case 'mkdir':
+                            cmd_mkdir(args, commandContext);
+                            break;
+                        case 'echo':
+                            cmd_echo(args, commandContext);
+                            break;
+                        case 'cat':
+                            cmd_cat(args, commandContext);
+                            break;
+                        case 'write':
+                            cmd_write(args, commandContext);
+                            break;
+                        case 'rm':
+                            cmd_rm(args, commandContext);
+                            break;
+                        case 'run':
+                            cmd_run(args, commandContext);
+                            break;
+                        case 'clear':
+                            cmd_clear(commandContext);
+                            break;
+                        case 'help':
+                            cmd_help(commandContext);
+                            break;
+                        case '':
+                            break;
+                        default:
+                            appendToOutput(`Command not found: ${cmd}`);
+                    }
+                }
+
+                // --- Command Implementations (now receive a context object) ---
+
+                function cmd_ls(args, context) {
+                    const targetPath = args[0] ? context.resolvePath(args[0]) : context.terminalCurrentPath;
+                    const node = context.getPathNode(targetPath);
+
+                    if (!node) {
+                        context.appendToOutput(`ls: cannot access '${args[0] || '.'}': No such file or directory`);
+                        return;
+                    }
+                    if (node.type !== 'directory') {
+                        context.appendToOutput(`ls: cannot list '${args[0]}': Not a directory`);
+                        return;
+                    }
+
+                    const contents = Object.keys(node.contents || {});
+                    if (contents.length === 0) {
+                        context.appendToOutput("");
+                        return;
+                    }
+
+                    const output = contents.map(name => {
+                        const item = node.contents[name];
+                        if (item.type === 'directory') {
+                            return `<span style="color: yellow;">${name}/</span>`;
+                        } else if (item.executable) {
+                             return `<span style="color: lightblue;">${name}*</span>`;
+                        }
+                        else {
+                            return name;
+                        }
+                    }).join('   ');
+                    context.appendToOutput(output);
+                }
+
+                function cmd_cd(args, context) {
+                    if (args.length === 0) {
+                        context.setTerminalCurrentPath('/');
+                        return;
+                    }
+                    const newPath = context.resolvePath(args[0]);
+                    const node = context.getPathNode(newPath);
+
+                    if (!node) {
+                        context.appendToOutput(`cd: ${args[0]}: No such file or directory`);
+                        return;
+                    }
+                    if (node.type !== 'directory') {
+                        context.appendToOutput(`cd: ${args[0]}: Not a directory`);
+                        return;
+                    }
+                    context.setTerminalCurrentPath(newPath);
+                }
+
+                function cmd_mkdir(args, context) {
+                    if (args.length === 0) {
+                        context.appendToOutput("mkdir: missing operand");
+                        context.appendToOutput("Try 'mkdir --help' for more information.");
+                        return;
+                    }
+                    const newDirName = args[0];
+                    const targetPath = context.resolvePath(newDirName);
+                    const parentDirParts = targetPath.split('/').filter(p => p);
+                    parentDirParts.pop();
+                    const parentPath = `/${parentDirParts.join('/')}` || '/';
+
+                    const parentNode = context.getPathNode(parentPath);
+
+                    if (!parentNode || parentNode.type !== 'directory') {
+                        context.appendToOutput(`mkdir: cannot create directory '${newDirName}': Parent directory does not exist or is not a directory`);
+                        return;
+                    }
+                    if (parentNode.contents[newDirName]) {
+                        context.appendToOutput(`mkdir: cannot create directory '${newDirName}': File exists`);
+                        return;
+                    }
+
+                    parentNode.contents[newDirName] = { type: 'directory', contents: {} };
+                    context.saveFileSystem();
+                    context.appendToOutput(`Directory '${newDirName}' created.`);
+                }
+
+                function cmd_echo(args, context) {
+                    context.appendToOutput(args.join(' '));
+                }
+
+                function cmd_cat(args, context) {
+                    if (args.length === 0) {
+                        context.appendToOutput("cat: missing operand");
+                        context.appendToOutput("Try 'cat --help' for more information.");
+                        return;
+                    }
+                    const filePath = context.resolvePath(args[0]);
+                    const node = context.getPathNode(filePath);
+
+                    if (!node) {
+                        context.appendToOutput(`cat: ${args[0]}: No such file or directory`);
+                        return;
+                    }
+                    if (node.type === 'directory') {
+                        context.appendToOutput(`cat: ${args[0]}: Is a directory`);
+                        return;
+                    }
+                    context.appendToOutput(node.content);
+                }
+
+                function cmd_write(args, context) {
+                    if (args.length < 2) {
+                        context.appendToOutput("write: missing file or content operand");
+                        context.appendToOutput("Usage: write <filename> <content> [-x for executable]");
+                        return;
+                    }
+                    const fileName = args[0];
+                    let isExecutable = false;
+                    let contentArgs = args.slice(1);
+                    if (contentArgs[contentArgs.length - 1] === '-x') {
+                        isExecutable = true;
+                        contentArgs.pop();
+                    }
+                    const content = contentArgs.join(' ');
+                    const currentDirNode = context.getPathNode(context.terminalCurrentPath);
+
+                    if (!currentDirNode || currentDirNode.type !== 'directory') {
+                         context.appendToOutput("write: current directory invalid.");
+                         return;
+                    }
+
+                    currentDirNode.contents[fileName] = { type: 'file', content: content, executable: isExecutable };
+                    context.saveFileSystem();
+                    context.appendToOutput(`File '${fileName}' written.`);
+                }
+
+                function cmd_rm(args, context) {
+                    if (args.length === 0) {
+                        context.appendToOutput("rm: missing operand");
+                        context.appendToOutput("Try 'rm --help' for more information.");
+                        return;
+                    }
+                    const targetName = args[0];
+                    const targetPath = context.resolvePath(targetName);
+                    const parentDirParts = targetPath.split('/').filter(p => p);
+                    const nameToRemove = parentDirParts.pop();
+                    const parentPath = `/${parentDirParts.join('/')}` || '/';
+
+                    const parentNode = context.getPathNode(parentPath);
+
+                    if (!parentNode || parentNode.type !== 'directory') {
+                        context.appendToOutput(`rm: cannot remove '${targetName}': Parent directory does not exist.`);
+                        return;
+                    }
+                    if (!parentNode.contents[nameToRemove]) {
+                        context.appendToOutput(`rm: cannot remove '${targetName}': No such file or directory`);
+                        return;
+                    }
+
+                    const targetNode = parentNode.contents[nameToRemove];
+                    if (targetNode.type === 'directory' && Object.keys(targetNode.contents).length > 0 && !args.includes('-r')) {
+                        context.appendToOutput(`rm: cannot remove '${targetName}': Directory not empty. Use -r to remove recursively.`);
+                        return;
+                    }
+
+                    delete parentNode.contents[nameToRemove];
+                    context.saveFileSystem();
+                    context.appendToOutput(`'${targetName}' removed.`);
+                }
+
+                function cmd_run(args, context) {
+                    if (args.length === 0) {
+                        context.appendToOutput("run: missing operand");
+                        context.appendToOutput("Usage: run <filename>");
+                        return;
+                    }
+                    const filePath = context.resolvePath(args[0]);
+                    runProgramLogic(filePath, context.appendToOutput);
+                }
+
+                function cmd_clear(context) {
+                    context.outputDiv.innerHTML = '';
+                }
+
+                function cmd_help(context) {
+                    context.appendToOutput("Available commands:");
+                    context.appendToOutput("  ls [path]             - List directory contents (directories are yellow/, executables are lightblue*).");
+                    context.appendToOutput("  cd [path]             - Change the current directory.");
+                    context.appendToOutput("  mkdir <dirname>       - Create a new directory.");
+                    context.appendToOutput("  echo <text>           - Display a line of text.");
+                    context.write_help("  write <filename> <content> [-x] - Write content to a file. Use -x to mark as executable.");
+                    context.appendToOutput("  rm <filename|dirname> [-r] - Remove a file or directory. Use -r for recursive directory removal.");
+                    context.appendToOutput("  run <filename>        - Execute a script file.");
+                    context.appendToOutput("  clear                 - Clear the terminal screen.");
+                    context.appendToOutput("  help                  - Show this help message.");
+                }
+
+                terminalWindow.addEventListener('click', () => {
+                    inputField.focus();
+                });
+            }
+
+            // --- File Explorer Logic ---
+            function setupFileExplorer(explorerWindow) {
+                const pathDisplay = explorerWindow.querySelector('.file-explorer-path');
+                const contentArea = explorerWindow.querySelector('.file-explorer-content');
+                const backBtn = explorerWindow.querySelector('#fileExplorerBackBtn');
+                const refreshBtn = explorerWindow.querySelector('#fileExplorerRefreshBtn');
+
+                let explorerCurrentPath = '/';
+
+                function updateFileExplorerView() {
+                    pathDisplay.textContent = explorerCurrentPath;
+                    contentArea.innerHTML = '';
+
+                    const currentNode = getPathNode(explorerCurrentPath);
+                    if (!currentNode || currentNode.type !== 'directory') {
+                        contentArea.innerHTML = '<div class="text-red-500 col-span-5">Error: Could not load directory.</div>';
+                        return;
+                    }
+
+                    if (explorerCurrentPath !== '/') {
+                        const upDirItem = document.createElement('div');
+                        upDirItem.className = 'file-item';
+                        upDirItem.innerHTML = `
+                            <svg class="file-item-icon text-yellow-500 w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm0 12H4V6h5.17l2 2H20v10z"/>
+                            </svg>
+                            <span class="file-item-name">..</span>
+                        `;
+                        upDirItem.addEventListener('click', () => {
+                            explorerCurrentPath = resolvePath(explorerCurrentPath, '..');
+                            updateFileExplorerView();
+                        });
+                        contentArea.appendChild(upDirItem);
+                    }
+
+
+                    const contents = Object.keys(currentNode.contents || {});
+                    contents.forEach(name => {
+                        const item = currentNode.contents[name];
+                        const itemElement = document.createElement('div');
+                        itemElement.className = 'file-item';
+                        itemElement.dataset.name = name;
+
+                        if (item.type === 'directory') {
+                            itemElement.innerHTML = `
+                                <svg class="file-item-icon text-yellow-500 w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                                    <path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
+                                </svg>
+                                <span class="file-item-name">${name}</span>
+                            `;
+                            itemElement.addEventListener('click', () => {
+                                explorerCurrentPath = resolvePath(explorerCurrentPath, name);
+                                updateFileExplorerView();
+                            });
+                        } else { // It's a file
+                            let iconSvg = `
+                                <svg class="file-item-icon text-gray-500 w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                                    <path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/>
+                                </svg>
+                            `;
+                            let nameColor = 'text-gray-800';
+
+                            if (item.executable) {
+                                iconSvg = `
+                                    <svg class="file-item-icon text-green-500 w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm-2-7h-1v-1h1v1zm0 2h-1v-1h1v1zm0 2h-1v-1h1v1zM15 16h-2V8h2v8zm-2-7h-1v-1h1v1zm0 2h-1v-1h1v1zm0 2h-1v-1h1v1zM18 16h-2V8h2v8z"/>
+                                    </svg>
+                                `;
+                                nameColor = 'text-green-600';
+                            }
+
+                            itemElement.innerHTML = `
+                                ${iconSvg}
+                                <span class="file-item-name ${nameColor}">${name}</span>
+                            `;
+
+                            if (item.executable) {
+                                itemElement.addEventListener('click', () => {
+                                    const fullPath = resolvePath(explorerCurrentPath, name);
+                                    createTerminalWindow(fullPath);
+                                });
+                            } else {
+                                itemElement.addEventListener('click', () => {
+                                    const fullPath = resolvePath(explorerCurrentPath, name);
+                                    createTextEditorWindow(fullPath, item.content);
+                                });
+                            }
+                        }
+                        contentArea.appendChild(itemElement);
+                    });
+                }
+
+                // Initial view update
+                updateFileExplorerView();
+
+                // Back button functionality
+                backBtn.addEventListener('click', () => {
+                    if (explorerCurrentPath !== '/') {
+                        explorerCurrentPath = resolvePath(explorerCurrentPath, '..');
+                        updateFileExplorerView();
+                    }
+                });
+
+                // Refresh button functionality
+                refreshBtn.addEventListener('click', () => {
+                    updateFileExplorerView(); // Simply re-render the current directory
+                });
+
+                // Store the update function on the window element for external calls
+                explorerWindow.updateViewFunction = updateFileExplorerView;
+            }
+
+
+            // --- Window Creation Functions ---
+            const windowTemplate = document.getElementById('windowTemplate');
+            const terminalWindowTemplate = document.getElementById('terminalWindowTemplate');
+            const fileExplorerWindowTemplate = document.getElementById('fileExplorerWindowTemplate');
+            const desktop = document.body;
+
+            let windowCount = 0;
+
+            function createNewWindow() {
+                const newWindow = windowTemplate.content.firstElementChild.cloneNode(true);
+                windowCount++;
+                newWindow.id = `window-${windowCount}`;
+                newWindow.querySelector('.window-title').textContent = `New Window ${windowCount}`;
+
+                const randomX = Math.random() * (window.innerWidth - newWindow.offsetWidth - 200) + 100;
+                const randomY = Math.random() * (window.innerHeight - newWindow.offsetHeight - 100 - 48) + 50;
+                newWindow.style.left = `${randomX}px`;
+                newWindow.style.top = `${randomY}px`;
+
+                desktop.appendChild(newWindow);
+                makeWindowDraggable(newWindow);
+                setupWindowControls(newWindow);
+                bringToFront(newWindow);
+                hideStartMenu();
+            }
+
+            // Function to create a text editor window
+            function createTextEditorWindow(filePath, initialContent) {
+                const textEditorWindow = windowTemplate.content.firstElementChild.cloneNode(true);
+                windowCount++;
+                const fileName = filePath.split('/').pop();
+                textEditorWindow.id = `text-editor-window-${windowCount}`;
+                textEditorWindow.querySelector('.window-title').textContent = `Editor: ${fileName}`;
+
+                const windowContentDiv = textEditorWindow.querySelector('.window-content');
+                windowContentDiv.innerHTML = `
+                    <div class="flex-grow flex flex-col h-full">
+                        <textarea class="flex-grow w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2" spellcheck="false"></textarea>
+                        <div class="flex items-center justify-end">
+                            <button class="editor-save-btn mr-2">Save</button>
+                            <span class="editor-status-msg" id="editorStatusMsg"></span>
+                        </div>
+                    </div>
+                `;
+
+                const textarea = windowContentDiv.querySelector('textarea');
+                const saveButton = windowContentDiv.querySelector('.editor-save-btn');
+                const statusMsg = windowContentDiv.querySelector('#editorStatusMsg');
+
+                textarea.value = initialContent;
+
+                saveButton.addEventListener('click', () => {
+                    const newContent = textarea.value;
+                    const pathParts = filePath.split('/').filter(p => p);
+                    const filenameToSave = pathParts.pop();
+                    const parentPath = `/${pathParts.join('/')}` || '/';
+
+                    const parentNode = getPathNode(parentPath);
+                    if (parentNode && parentNode.type === 'directory' && parentNode.contents[filenameToSave]) {
+                        parentNode.contents[filenameToSave].content = newContent;
+                        saveFileSystem();
+                        statusMsg.textContent = 'Saved!';
+                        statusMsg.style.color = 'green';
+                        // Trigger a refresh in all open File Explorer windows
+                        document.querySelectorAll('.window').forEach(win => {
+                            // Check if this window is a file explorer AND it has the update function exposed
+                            if (win.querySelector('.file-explorer-content') && win.updateViewFunction && win.style.display !== 'none') {
+                                win.updateViewFunction(); // Call its refresh function
+                            }
+                        });
+
+
+                    } else {
+                        statusMsg.textContent = 'Error: File not found or path invalid!';
+                        statusMsg.style.color = 'red';
+                    }
+                    setTimeout(() => statusMsg.textContent = '', 3000);
+                });
+
+
+                const randomX = Math.random() * (window.innerWidth - textEditorWindow.offsetWidth - 200) + 100;
+                const randomY = Math.random() * (window.innerHeight - textEditorWindow.offsetHeight - 100 - 48) + 50;
+                textEditorWindow.style.left = `${randomX}px`;
+                textEditorWindow.style.top = `${randomY}px`;
+                textEditorWindow.style.width = '600px';
+                textEditorWindow.style.height = '450px';
+
+                desktop.appendChild(textEditorWindow);
+                makeWindowDraggable(textEditorWindow);
+                setupWindowControls(textEditorWindow);
+                bringToFront(textEditorWindow);
+                hideStartMenu();
+                textarea?.focus();
+                return textEditorWindow;
+            }
+
+
+            function createTerminalWindow(programToRun = null) {
+                const terminalWindow = terminalWindowTemplate.content.firstElementChild.cloneNode(true);
+                windowCount++;
+                terminalWindow.id = `terminal-window-${windowCount}`;
+                terminalWindow.querySelector('.window-title').textContent = `Terminal ${windowCount}`;
+
+                const randomX = Math.random() * (window.innerWidth - terminalWindow.offsetWidth - 200) + 100;
+                const randomY = Math.random() * (window.innerHeight - terminalWindow.offsetHeight - 100 - 48) + 50;
+                terminalWindow.style.left = `${randomX}px`;
+                terminalWindow.style.top = `${randomY}px`;
+
+                desktop.appendChild(terminalWindow);
+                makeWindowDraggable(terminalWindow);
+                setupWindowControls(terminalWindow);
+                bringToFront(terminalWindow);
+                setupTerminal(terminalWindow);
+
+                if (typeof programToRun === 'string' && programToRun.length > 0) {
+                    const outputDiv = terminalWindow.querySelector('.terminal-content');
+                    const terminalAppendToOutput = (text) => {
+                        outputDiv.innerHTML += `<span>${escapeHtml(text)}</span>\n`;
+                        outputDiv.scrollTop = outputDiv.scrollHeight;
+                    };
+                    terminalAppendToOutput(`Automatically running: ${programToRun.split('/').pop()}`);
+                    runProgramLogic(programToRun, terminalAppendToOutput);
+                }
+
+                hideStartMenu();
+                terminalWindow.querySelector('.terminal-input').focus();
+                return terminalWindow;
+            }
+
+            function createFileExplorerWindow() {
+                const explorerWindow = fileExplorerWindowTemplate.content.firstElementChild.cloneNode(true);
+                windowCount++;
+                explorerWindow.id = `file-explorer-window-${windowCount}`;
+                explorerWindow.querySelector('.window-title').textContent = `File Explorer ${windowCount}`;
+
+                const randomX = Math.random() * (window.innerWidth - explorerWindow.offsetWidth - 200) + 100;
+                const randomY = Math.random() * (window.innerHeight - explorerWindow.offsetHeight - 100 - 48) + 50;
+                explorerWindow.style.left = `${randomX}px`;
+                explorerWindow.style.top = `${randomY}px`;
+
+                desktop.appendChild(explorerWindow);
+                makeWindowDraggable(explorerWindow);
+                setupWindowControls(explorerWindow);
+                bringToFront(explorerWindow);
+                setupFileExplorer(explorerWindow);
+                hideStartMenu();
+                return explorerWindow;
+            }
+
+
+            // --- Start Menu Functionality ---
+            const startMenuBtn = document.getElementById('startMenuBtn');
+            const startMenu = document.getElementById('startMenu');
+            const startMenuNewWindowBtn = document.getElementById('startMenuNewWindow');
+            const startMenuTerminalBtn = document.getElementById('startMenuTerminal');
+            const startMenuFileExplorerBtn = document.getElementById('startMenuFileExplorer');
+            const startMenuRestartBtn = document.getElementById('startMenuRestart');
+            const startMenuShutdownBtn = document.getElementById('startMenuShutdown');
+
+            function toggleStartMenu() {
+                if (startMenu.style.display === 'flex') {
+                    startMenu.style.display = 'none';
+                } else {
+                    startMenu.style.display = 'flex';
+                }
+            }
+
+            function hideStartMenu() {
+                startMenu.style.display = 'none';
+            }
+
+            function restartOS() {
+                hideStartMenu();
+                window.location.reload(true);
+            }
+
+            function shutdownOS() {
+                hideStartMenu();
+                window.location.reload();
+            }
+
+            startMenuBtn.addEventListener('click', (event) => {
+                event.stopPropagation();
+                toggleStartMenu();
+            });
+
+            startMenuNewWindowBtn.addEventListener('click', createNewWindow);
+            startMenuTerminalBtn.addEventListener('click', createTerminalWindow);
+            startMenuFileExplorerBtn.addEventListener('click', createFileExplorerWindow);
+            startMenuRestartBtn.addEventListener('click', restartOS);
+            startMenuShutdownBtn.addEventListener('click', shutdownOS);
+
+            document.addEventListener('click', (event) => {
+                if (startMenu.style.display === 'flex' && !startMenu.contains(event.target) && event.target !== startMenuBtn) {
+                    hideStartMenu();
+                }
+            });
+
+            document.ondragstart = function() { return false; };
+        });
+    </script>
+</body>
+</html>
